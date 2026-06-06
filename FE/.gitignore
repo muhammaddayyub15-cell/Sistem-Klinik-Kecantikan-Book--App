@@ -25,10 +25,15 @@ dist-ssr
 README-PROJECT-CHECKLIST.md
 README-PROJECT-STRUCTURE.md
 README-PROJECTS-FE.md
-STATUS-FITUR-DEVELOPMENT.md
+doc/STATUS-FITUR-DEVELOPMENT.md
 DOCUMENTATION.md
 doc/01-projects-flow.md
 doc/02-projects-structure.md
 doc/03-feature-documentation.md
 doc/04-projects-new-structure.md
 doc/05-ai-agents-tracker.md
+doc/ADMIN_PATIENT_FEATURES.md
+doc/ARCHITECTURE_TECH_DETAILED.md
+doc/FEATURES_HIGHLIGHTS.md
+doc/PROJECTS_OVERVIEW.md
+doc/TECHNICAL_ARCHITECTURE.md
