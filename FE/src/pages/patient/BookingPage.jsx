@@ -252,14 +252,13 @@ function SuccessScreen({ service, doctor, date, schedule, notes, onPayNow, onSki
 
           {/* CTA */}
           <div className="flex flex-col gap-3">
-            <button
-              onClick={onPayNow}
-              disabled={isPaying}
-              className="w-full px-8 py-3.5 rounded-xl text-white text-sm font-medium hover:opacity-90 transition disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ background: "linear-gradient(135deg, #c4865f, #9a5030)" }}
+            {/* Payment Coming Soon — fitur payment belum aktif */}
+            <div
+              className="w-full px-8 py-3.5 rounded-xl text-sm font-medium text-center cursor-not-allowed select-none"
+              style={{ background: "rgba(184,124,90,0.15)", color: "#b0907e", border: "1px dashed rgba(184,124,90,0.3)" }}
             >
-              {isPaying ? "Processing…" : "Proceed to Payment →"}
-            </button>
+              🔒 Payment — Coming Soon
+            </div>
             <button
               onClick={onSkip}
               disabled={isPaying}
@@ -269,7 +268,7 @@ function SuccessScreen({ service, doctor, date, schedule, notes, onPayNow, onSki
             </button>
           </div>
           <p className="text-[11px] text-center text-[#b0907e] mt-3">
-            Secure checkout · Powered by Midtrans
+            Payment gateway integration coming soon
           </p>
         </div>
       </div>

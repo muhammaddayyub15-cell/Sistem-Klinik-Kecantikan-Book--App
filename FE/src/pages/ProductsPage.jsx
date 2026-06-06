@@ -1,7 +1,5 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useCart } from "../contexts/CartContext";
-import { useAuth } from "../contexts/AuthContext";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -123,7 +121,7 @@ const fmt = (n) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-// ── Shared styles (mengikuti pola inputCls / labelCls di RegisterPage) ────────
+// ── Shared styles ─────────────────────────────────────────────────────────────
 
 const filterBtnCls = (active) =>
   `flex-shrink-0 px-5 py-2 rounded-full text-xs tracking-wide transition-all duration-200 cursor-pointer border ${active
@@ -131,37 +129,17 @@ const filterBtnCls = (active) =>
     : "bg-transparent text-[#5a3e35] border-[rgba(184,124,90,0.25)] hover:border-[rgba(184,124,90,0.4)]"
   }`;
 
-const addBtnCls = (inCart) =>
-  `px-3 py-1.5 rounded-full text-xs transition-all duration-200 active:scale-95 border border-[rgba(184,124,90,0.2)] cursor-pointer ${inCart
-    ? "bg-[#b87c5a] text-white"
-    : "bg-[rgba(184,124,90,0.1)] text-[#8b4c34] hover:bg-[rgba(184,124,90,0.2)]"
-  }`;
-
 // ── Component ─────────────────────────────────────────────────────────────────
+// Catalog only — public page, tidak ada cart interaction.
+// Cart hanya tersedia di /patient/products setelah login.
 
 export default function ProductsPage() {
   const [activeCategory, setActiveCategory] = useState("All");
-  const [added, setAdded] = useState(null);
-
-  const { cartItems, addToCart, totalItems } = useCart();
-  const { isAuthenticated } = useAuth();
 
   const filtered =
     activeCategory === "All"
       ? PRODUCTS
       : PRODUCTS.filter((p) => p.category === activeCategory);
-
-  // CartContext.addToCart() sudah handle qty increment secara internal,
-  // jadi tidak perlu cek manual apakah produk sudah ada di cart.
-  const handleAdd = (product) => {
-    addToCart({ id: product.id, name: product.name, price: product.price }, 1);
-    setAdded(product.id);
-    setTimeout(() => setAdded(null), 1200);
-  };
-
-  // Ambil qty produk di cart untuk label tombol dan badge visual.
-  const getQtyInCart = (productId) =>
-    cartItems.find((item) => item.id === productId)?.qty ?? 0;
 
   return (
     <>
@@ -208,9 +186,7 @@ export default function ProductsPage() {
         </section>
 
         {/* ── CATEGORY FILTER ── */}
-        <div
-          className="sticky top-0 z-30 py-4 px-6 backdrop-blur-md bg-[rgba(250,248,245,0.95)] border-b border-[rgba(184,124,90,0.1)]"
-        >
+        <div className="sticky top-0 z-30 py-4 px-6 backdrop-blur-md bg-[rgba(250,248,245,0.95)] border-b border-[rgba(184,124,90,0.1)]">
           <div className="max-w-6xl mx-auto flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {CATEGORIES.map((cat) => (
               <button
@@ -221,26 +197,6 @@ export default function ProductsPage() {
                 {cat}
               </button>
             ))}
-
-            {/* Cart indicator — auth-aware:
-                - Login + ada item  → tampil jumlah item
-                - Guest + ada item  → tampil link ke /login                */}
-            {totalItems > 0 && (
-              isAuthenticated ? (
-                <div className="flex-shrink-0 ml-auto flex items-center gap-2 px-4 py-2 rounded-full text-xs bg-[rgba(184,124,90,0.1)] text-[#8b4c34] border border-[rgba(184,124,90,0.2)]">
-                  <span>◉</span>
-                  {totalItems} item{totalItems > 1 ? "s" : ""} in cart
-                </div>
-              ) : (
-                <Link
-                  to="/login"
-                  className="flex-shrink-0 ml-auto flex items-center gap-2 px-4 py-2 rounded-full text-xs bg-[rgba(184,124,90,0.1)] text-[#8b4c34] border border-[rgba(184,124,90,0.2)] transition-all duration-200 hover:opacity-80"
-                >
-                  <span>◉</span>
-                  {totalItems} item{totalItems > 1 ? "s" : ""} — Login to view cart
-                </Link>
-              )
-            )}
           </div>
         </div>
 
@@ -252,79 +208,55 @@ export default function ProductsPage() {
           </p>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {filtered.map((p) => {
-              const qtyInCart = getQtyInCart(p.id);
-              const isAdding = added === p.id;
+            {filtered.map((p) => (
+              <div
+                key={p.id}
+                className="group relative rounded-2xl overflow-hidden bg-white border border-[rgba(184,124,90,0.12)] transition-all duration-300 hover:-translate-y-1"
+                style={{ boxShadow: "0 2px 12px rgba(150,80,40,0.04)" }}
+              >
+                {/* Visual area */}
+                <div className="relative h-44 flex items-center justify-center" style={{ background: p.color }}>
+                  <span className="text-6xl opacity-30 select-none text-[#b87c5a]">{p.icon}</span>
 
-              return (
-                <div
-                  key={p.id}
-                  className="group relative rounded-2xl overflow-hidden bg-white border border-[rgba(184,124,90,0.12)] transition-all duration-300 hover:-translate-y-1"
-                  style={{ boxShadow: "0 2px 12px rgba(150,80,40,0.04)" }}
-                >
-                  {/* Visual area */}
-                  <div className="relative h-44 flex items-center justify-center" style={{ background: p.color }}>
-                    <span className="text-6xl opacity-30 select-none text-[#b87c5a]">{p.icon}</span>
-
-                    {/* Tag badge */}
-                    <div className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs text-[#8b4c34] bg-[rgba(255,255,255,0.8)] backdrop-blur-sm">
-                      {p.tag}
-                    </div>
-
-                    {/* Sale badge */}
-                    {p.originalPrice && (
-                      <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-xs font-medium bg-[#b87c5a] text-white">
-                        Sale
-                      </div>
-                    )}
-
-                    {/* Qty badge — muncul saat produk sudah di cart,
-                        menampilkan jumlah qty agar user tahu tanpa memblokir tombol */}
-                    {qtyInCart > 0 && (
-                      <div className="absolute bottom-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold bg-[#b87c5a] text-white">
-                        {qtyInCart}
-                      </div>
-                    )}
+                  {/* Tag badge */}
+                  <div className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs text-[#8b4c34] bg-[rgba(255,255,255,0.8)] backdrop-blur-sm">
+                    {p.tag}
                   </div>
 
-                  {/* Info area */}
-                  <div className="p-5">
-                    <p className="text-xs text-[#b87c5a] mb-1">{p.category}</p>
-                    <h3 className="text-sm font-medium text-[#2c1f1a] leading-snug mb-2">{p.name}</h3>
-                    <p className="text-xs text-[#7a5a52] leading-relaxed mb-4">{p.desc}</p>
+                  {/* Sale badge */}
+                  {p.originalPrice && (
+                    <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-xs font-medium bg-[#b87c5a] text-white">
+                      Sale
+                    </div>
+                  )}
+                </div>
 
-                    {/* Rating */}
-                    <div className="flex items-center gap-1.5 mb-4">
-                      <span className="text-[11px] text-[#b87c5a]">{"★".repeat(5)}</span>
-                      <span className="text-xs text-[#9a6e62]">
-                        {p.rating} ({p.reviews})
+                {/* Info area */}
+                <div className="p-5">
+                  <p className="text-xs text-[#b87c5a] mb-1">{p.category}</p>
+                  <h3 className="text-sm font-medium text-[#2c1f1a] leading-snug mb-2">{p.name}</h3>
+                  <p className="text-xs text-[#7a5a52] leading-relaxed mb-4">{p.desc}</p>
+
+                  {/* Rating */}
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <span className="text-[11px] text-[#b87c5a]">{"★".repeat(5)}</span>
+                    <span className="text-xs text-[#9a6e62]">
+                      {p.rating} ({p.reviews})
+                    </span>
+                  </div>
+
+                  {/* Price only — catalog view, tidak ada tombol cart */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-base font-semibold text-[#2c1f1a]">{fmt(p.price)}</span>
+                    {p.originalPrice && (
+                      <span className="text-xs line-through text-[#b0907e]">
+                        {fmt(p.originalPrice)}
                       </span>
-                    </div>
-
-                    {/* Price + CTA */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-base font-semibold text-[#2c1f1a]">{fmt(p.price)}</span>
-                        {p.originalPrice && (
-                          <span className="text-xs ml-1.5 line-through text-[#b0907e]">
-                            {fmt(p.originalPrice)}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Tombol selalu aktif (tidak ada disabled).
-                          Label:
-                            - isAdding  → "Added ✓"   (feedback 1.2 detik)
-                            - qtyInCart → "+ 1 more"  (sudah di cart, bisa tambah lagi)
-                            - default   → "+ Cart"    (belum di cart)              */}
-                      <button onClick={() => handleAdd(p)} className={addBtnCls(qtyInCart > 0)}>
-                        {isAdding ? "Added ✓" : qtyInCart > 0 ? "+ 1 more" : "+ Cart"}
-                      </button>
-                    </div>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </section>
 
@@ -355,4 +287,3 @@ export default function ProductsPage() {
     </>
   );
 }
-

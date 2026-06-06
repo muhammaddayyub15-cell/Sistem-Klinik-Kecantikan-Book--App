@@ -1,9 +1,10 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 
 const STEPS = ["Role", "Details", "Account"];
 
+// ROLES: hanya patient — registrasi doctor dilakukan oleh admin
 const ROLES = [
   {
     value: "patient",
@@ -16,30 +17,12 @@ const ROLES = [
     label: "Patient",
     desc: "Book treatments, track your progress, shop skincare products.",
   },
-  {
-    value: "doctor",
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4">
-        <path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
-        <path d="M12 13v4M10 15h4" />
-      </svg>
-    ),
-    label: "Doctor",
-    desc: "Manage your schedule, consult patients, create medical records.",
-  },
 ];
 
 const REDIRECT = {
   patient: "/patient/dashboard",
   doctor: "/doctor/dashboard",
 };
-
-const SPECIALIZATIONS = [
-  { value: "aesthetic_dermatology", label: "Aesthetic Dermatology" },
-  { value: "laser_skin", label: "Laser & Skin Expert" },
-  { value: "cosmetic_physician", label: "Cosmetic Physician" },
-  { value: "general_skin", label: "General Skincare" },
-];
 
 const inputCls =
   "w-full px-4 py-3 rounded-xl border border-[#e8d5c8] bg-[#fdf8f5] text-[#2c1f1a] text-sm placeholder-[#c4a898] outline-none transition-all duration-200 focus:border-[#b87c5a] focus:bg-white focus:shadow-sm";
@@ -82,8 +65,7 @@ function RegisterPage() {
 
   const [form, setForm] = useState({
     role: "", name: "", phone: "", date_of_birth: "",
-    gender: "", specialization: "", email: "",
-    password: "", confirmPassword: "",
+    gender: "", email: "", password: "", confirmPassword: "",
   });
 
   const strength = getPasswordStrength(form.password);
@@ -324,17 +306,6 @@ function RegisterPage() {
                       </select>
                     </div>
                   </div>
-                  {form.role === "doctor" && (
-                    <div>
-                      <label className={labelCls}>Specialization</label>
-                      <select value={form.specialization} onChange={(e) => setField("specialization", e.target.value)} className={selectCls}>
-                        <option value="">Select specialization</option>
-                        {SPECIALIZATIONS.map((s) => (
-                          <option key={s.value} value={s.value}>{s.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
                 </div>
               )}
 
