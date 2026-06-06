@@ -36,6 +36,17 @@ class OrderRepository extends BaseRepository
             ->get();
     }
 
+    // findByBookingId: Cari order berdasarkan booking_id.
+    // Dipakai OrderService::createBookingOrder() untuk guard double order —
+    // satu booking hanya boleh punya satu order aktif (non-cancelled).
+    public function findByBookingId(int $bookingId): ?Order
+    {
+        return $this->model
+            ->where('booking_id', $bookingId)
+            ->whereNotIn('status', ['cancelled'])
+            ->first();
+    }
+
     // findByOrderNumber: Cari order berdasarkan order_number.
     // Dipakai saat webhook Midtrans masuk — Midtrans mengembalikan order_number
     // di field 'order_id' payload karena itulah yang dikirim saat initiate payment.

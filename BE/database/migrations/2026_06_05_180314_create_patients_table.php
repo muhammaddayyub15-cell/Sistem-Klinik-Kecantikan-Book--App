@@ -9,13 +9,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('patients', function (Blueprint $table) {
+            // PK eksplisit — direferensi oleh bookings, medical_records, orders (snapshot)
             $table->id('patient_id');
 
-            // FK ke users — unique karena relasi 1:1 (satu akun hanya satu profil pasien)
-            $table->unsignedBigInteger('user_id')->unique();
-            $table->foreign('user_id')
-                  ->references('user_id')
-                  ->on('users')
+            // FK ke users — unique karena 1 akun hanya bisa jadi 1 pasien
+            // dibuat di AuthService::register() bersamaan dengan User
+            $table->foreignId('user_id')
+                  ->unique()
+                  ->constrained('users', 'user_id')
                   ->cascadeOnDelete();
 
             $table->date('date_of_birth')->nullable();
@@ -23,7 +24,9 @@ return new class extends Migration
             $table->enum('blood_type', ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'])->nullable();
             $table->text('address')->nullable();
 
-            // medical_history: riwayat medis singkat dalam format teks bebas
+            // medical_history: riwayat medis statis yang diisi pasien
+            // berbeda dari medical_records (catatan per kunjungan oleh dokter)
+            // contoh: "alergi penisilin", "diabetes tipe 2", "riwayat operasi usus buntu"
             // nullable — tidak wajib diisi saat registrasi, bisa dilengkapi kemudian
             $table->text('medical_history')->nullable();
 

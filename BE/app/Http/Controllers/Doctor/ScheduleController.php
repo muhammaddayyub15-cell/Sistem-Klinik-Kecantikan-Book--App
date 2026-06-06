@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Doctor;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Doctor\StoreScheduleRequest;
 use App\Http\Requests\Doctor\UpdateScheduleRequest;
+use App\Repositories\BookingRepository;
 use App\Services\ScheduleService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
@@ -14,7 +15,12 @@ class ScheduleController extends Controller
 {
     use ApiResponseTrait;
 
-    public function __construct(protected ScheduleService $scheduleService) {}
+    public function __construct(
+        protected ScheduleService   $scheduleService,
+        // BookingRepository di-inject langsung di controller karena ini read-only query,
+        // tidak perlu lewat BookingService yang membawa logika bisnis booking.
+        protected BookingRepository $bookingRepository,
+    ) {}
 
     // index: ambil semua jadwal dokter — admin & dokter yang bersangkutan
     // GET /doctors/{doctorId}/schedules
@@ -43,6 +49,20 @@ class ScheduleController extends Controller
             return $this->errorResponse('Dokter tidak ditemukan.', 404);
         } catch (\Exception $e) {
             return $this->errorResponse('Gagal mengambil jadwal aktif dokter.', 500);
+        }
+    }
+
+    // takenDates: ambil tanggal yang sudah penuh untuk satu schedule — publik.
+    // Dipakai BookingPage FE untuk grey-out tanggal tidak tersedia di date picker.
+    // GET /doctors/{doctorId}/schedules/{scheduleId}/taken-dates
+    public function takenDates(int $doctorId, int $scheduleId): JsonResponse
+    {
+        try {
+            $dates = $this->bookingRepository->getTakenDatesBySchedule($scheduleId);
+
+            return $this->successResponse($dates);
+        } catch (\Exception $e) {
+            return $this->errorResponse('Gagal mengambil data tanggal.', 500);
         }
     }
 

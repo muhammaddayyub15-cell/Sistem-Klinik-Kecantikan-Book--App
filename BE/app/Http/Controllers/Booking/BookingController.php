@@ -52,8 +52,9 @@ class BookingController extends Controller
     {
         try {
             $booking = $this->bookingService->findOrFail($id);
-
+            $booking->load(['doctor.user', 'doctor.specialization', 'doctorSchedule', 'service', 'patient.user']);
             return $this->successResponse($booking);
+            
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
             return $this->notFoundResponse('Booking tidak ditemukan.');
         } catch (\Throwable $e) {

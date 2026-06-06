@@ -53,7 +53,10 @@ class PaymentService extends BaseService
     {
         return DB::transaction(function () use ($orderId) {
 
-            $order = $this->orderRepository->findOrFail($orderId)->load('orderItems');
+            // [FIX] Load booking.service sekaligus — dibutuhkan buildSnapParams()
+            //       untuk booking-only order yang tidak punya orderItems.
+            $order = $this->orderRepository->findOrFail($orderId)
+                ->load(['orderItems', 'booking.service']);
 
             // Validasi order harus pending sebelum bisa bayar
             if ($order->status !== 'pending') {
@@ -66,23 +69,27 @@ class PaymentService extends BaseService
                 throw new \Exception('Pembayaran untuk order ini sudah pernah diinisiasi.', 422);
             }
 
-            // Generate order_number unik dengan timestamp untuk dikirim ke Midtrans
+            // Generate order_number unik dengan timestamp untuk dikirim ke Midtrans.
             // Format: ORD-<YYYYMMDDHHmmss>-<6 char random>
+            // [NOTE] OrderService sudah generate order_number saat create order,
+            //        tapi PaymentService override di sini karena format yang dikirim
+            //        ke Midtrans harus unik per transaksi dan mengandung timestamp
+            //        untuk memudahkan debug di Midtrans dashboard.
             $orderNumber = 'ORD-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(6));
 
-            // Simpan order_number ke tabel orders sebelum call Midtrans
-            // Wajib disimpan lebih dulu agar webhook yang masuk bisa di-lookup
+            // Simpan order_number ke tabel orders sebelum call Midtrans.
+            // Wajib disimpan lebih dulu agar webhook yang masuk bisa di-lookup.
             $this->orderRepository->updateOrderNumber($order->order_id, $orderNumber);
 
             // Buat payment record dengan status pending
             $this->paymentRepository->create([
-                'order_id'       => $orderId,
-                'midtrans_id'    => null,     // diisi saat webhook masuk
-                'amount'         => $order->total_amount,
-                'payment_method' => null,     // FIX: singular, diisi saat webhook masuk
-                'payment_channel' => null,     // diisi saat webhook masuk
-                'status'         => 'pending',
-                'paid_at'        => null,
+                'order_id'        => $orderId,
+                'midtrans_id'     => null,    // diisi saat webhook masuk
+                'amount'          => $order->total_amount,
+                'payment_method'  => null,    // diisi saat webhook masuk
+                'payment_channel' => null,    // diisi saat webhook masuk
+                'status'          => 'pending',
+                'paid_at'         => null,
             ]);
 
             // Request Snap token ke Midtrans
@@ -122,8 +129,8 @@ class PaymentService extends BaseService
 
             // Update data Midtrans ke payment record
             $payment->update([
-                'midtrans_id'    => $payload['transaction_id'] ?? null,
-                'payment_method' => $payload['payment_type']   ?? null,  // FIX: singular
+                'midtrans_id'     => $payload['transaction_id'] ?? null,
+                'payment_method'  => $payload['payment_type']   ?? null,
                 'payment_channel' => $payload['bank'] ?? $payload['acquirer'] ?? null,
             ]);
 
@@ -162,8 +169,38 @@ class PaymentService extends BaseService
     }
 
     // buildSnapParams: Susun parameter untuk Snap API Midtrans.
+    //
+    // [FIX] Midtrans wajib item_details tidak boleh kosong.
+    //       Untuk booking-only order (orderItems = []), gunakan data dari
+    //       booking.service sebagai satu item: service_name + base_price.
+    //       Untuk product order, map dari orderItems seperti biasa.
     private function buildSnapParams(Order $order, string $orderNumber): array
     {
+        $hasItems = $order->orderItems->isNotEmpty();
+
+        if ($hasItems) {
+            // Product order — item dari orderItems
+            $itemDetails = $order->orderItems->map(fn ($item) => [
+                'id'       => (string) $item->product_id_snapshot,
+                'price'    => (int) $item->unit_price_snapshot,
+                'quantity' => (int) $item->qty,
+                'name'     => mb_substr($item->product_name_snapshot, 0, 50),
+            ])->toArray();
+        } else {
+            // [FIX] Booking-only order — tidak ada orderItems.
+            //       Midtrans tetap butuh item_details, isi dengan service dari booking.
+            //       booking.service sudah di-load di initiate() sebelum method ini dipanggil.
+            $serviceName  = $order->booking?->service?->service_name ?? 'Clinic Service';
+            $servicePrice = (int) ($order->booking?->service?->base_price ?? $order->total_amount);
+
+            $itemDetails = [[
+                'id'       => 'SERVICE-' . ($order->booking?->booking_id ?? $order->order_id),
+                'price'    => $servicePrice,
+                'quantity' => 1,
+                'name'     => mb_substr($serviceName, 0, 50),
+            ]];
+        }
+
         return [
             'transaction_details' => [
                 'order_id'     => $orderNumber,
@@ -172,12 +209,7 @@ class PaymentService extends BaseService
             'customer_details' => [
                 'first_name' => $order->patient_name_snapshot,
             ],
-            'item_details' => $order->orderItems->map(fn($item) => [
-                'id'       => (string) $item->product_id_snapshot,
-                'price'    => (int) $item->unit_price_snapshot,
-                'quantity' => (int) $item->qty,
-                'name'     => mb_substr($item->product_name_snapshot, 0, 50),
-            ])->toArray(),
+            'item_details' => $itemDetails,
         ];
     }
 
@@ -188,9 +220,9 @@ class PaymentService extends BaseService
         $expected = hash(
             'sha512',
             ($payload['order_id']     ?? '') .
-                ($payload['status_code']  ?? '') .
-                ($payload['gross_amount'] ?? '') .
-                config('midtrans.server_key')
+            ($payload['status_code']  ?? '') .
+            ($payload['gross_amount'] ?? '') .
+            config('midtrans.server_key')
         );
 
         if (($payload['signature_key'] ?? '') !== $expected) {
@@ -198,7 +230,6 @@ class PaymentService extends BaseService
         }
     }
 
-    // handleSettlement: Pembayaran berhasil — update payment success + order paid.
     // handleSettlement: Pembayaran berhasil — update payment success + order paid + notify patient.
     private function handleSettlement(Model $payment): void
     {
@@ -225,7 +256,7 @@ class PaymentService extends BaseService
     // handleExpiry: Batas waktu pembayaran habis.
     private function handleExpiry(Model $payment): void
     {
-        $this->paymentRepository->updateStatus($payment->payment_id, 'expired'); // FIX: bukan 'expire'
+        $this->paymentRepository->updateStatus($payment->payment_id, 'expired');
 
         $this->orderRepository->updateStatus($payment->order_id, 'cancelled', [
             'cancelled_at' => now(),
@@ -235,7 +266,7 @@ class PaymentService extends BaseService
     // handleCancellation: Pembayaran dibatalkan atau ditolak.
     private function handleCancellation(Model $payment): void
     {
-        $this->paymentRepository->updateStatus($payment->payment_id, 'failed'); // FIX: bukan 'cancel'
+        $this->paymentRepository->updateStatus($payment->payment_id, 'failed');
 
         $this->orderRepository->updateStatus($payment->order_id, 'cancelled', [
             'cancelled_at' => now(),

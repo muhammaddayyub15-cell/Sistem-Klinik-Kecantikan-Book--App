@@ -14,6 +14,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // CORS: HandleCors harus jadi middleware pertama di API
+        // agar preflight OPTIONS request langsung dihandle sebelum auth/role check
+        $middleware->prependToGroup('api', [
+            \Illuminate\Http\Middleware\HandleCors::class,
+        ]);
+
         // role: alias untuk RoleMiddleware — dipakai di routes sebagai 'role:admin,doctor'
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,

@@ -5,6 +5,7 @@ namespace App\Repositories;
 use App\Models\Booking;
 use App\Repositories\BaseRepository;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 
 // BookingRepository: query layer untuk bookings
 class BookingRepository extends BaseRepository
@@ -27,7 +28,7 @@ class BookingRepository extends BaseRepository
     public function findByPatient(int $patientId): Collection
     {
         return $this->model
-            ->with(['doctor.user', 'doctorSchedule', 'service'])
+            ->with(['doctor.user', 'doctor.specialization', 'doctorSchedule', 'service'])
             ->where('patient_id', $patientId)
             ->latest('booked_date')
             ->get();
@@ -65,5 +66,19 @@ class BookingRepository extends BaseRepository
             ->whereNotIn('status', [Booking::STATUS_CANCELLED])
             ->lockForUpdate()
             ->exists();
+    }
+
+    // getTakenDatesBySchedule: ambil semua tanggal yang sudah terisi untuk satu schedule.
+    // Dipakai FE untuk grey-out tanggal di date picker sebelum user submit.
+    // Hanya ambil tanggal >= hari ini agar query tetap ringan.
+    // Return: Collection of date strings ['Y-m-d', ...]
+    public function getTakenDatesBySchedule(int $scheduleId): SupportCollection
+    {
+        return $this->model
+            ->where('doctor_schedule_id', $scheduleId)
+            ->where('booked_date', '>=', now()->toDateString())
+            ->whereNotIn('status', [Booking::STATUS_CANCELLED])
+            ->pluck('booked_date')
+            ->map(fn($date) => (string) $date); // pastikan format string Y-m-d
     }
 }
