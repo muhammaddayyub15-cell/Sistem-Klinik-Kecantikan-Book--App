@@ -261,7 +261,7 @@ function CreateBookingModal({ onClose, onSuccess }) {
                 patient_id: getPatientId(selectedPatient),
                 doctor_id: selectedDoctor.doctor_id ?? selectedDoctor.id,
                 service_id: selectedService.service_id,
-                doctsched_id: selectedSchedule.schedule_id,
+                doctor_schedule_id: selectedSchedule.schedule_id,
                 booked_date: toISODate(selectedDate),
                 notes: notes || null,
             });

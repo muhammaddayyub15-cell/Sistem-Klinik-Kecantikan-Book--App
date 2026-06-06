@@ -19,9 +19,8 @@ export default function UserSection({ collapsed }) {
     navigate("/login");
   };
 
-  const initials = user?.name
-    ? user.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
-    : "AU";
+  const initials = (user?.full_name ?? user?.name ?? "AU")
+    .split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
   const roleLabel = {
     patient: "Patient",
@@ -96,7 +95,7 @@ export default function UserSection({ collapsed }) {
                   whiteSpace: "nowrap",
                 }}
               >
-                {user?.name ?? "Aura User"}
+                
               </p>
               <span
                 style={{
@@ -160,7 +159,7 @@ export default function UserSection({ collapsed }) {
               }}
             >
               <p style={{ fontSize: 13, fontWeight: 500, color: "#2c1f1a", margin: 0 }}>
-                {user?.name ?? "Aura User"}
+                {user?.full_name ?? user?.name ?? "Aura User"}
               </p>
               <p style={{ fontSize: 11, color: "#9a7065", margin: "2px 0 0" }}>
                 {user?.email ?? "user@auraclinic.com"}
@@ -176,7 +175,7 @@ export default function UserSection({ collapsed }) {
                   </svg>
                 ),
                 label: "My Profile",
-                action: () => navigate(`/${user?.role}/profile`),
+                action: () => navigate("/coming-soon"),
               },
               {
                 icon: (
@@ -186,7 +185,7 @@ export default function UserSection({ collapsed }) {
                   </svg>
                 ),
                 label: "Settings",
-                action: () => navigate(`/${user?.role}/settings`),
+                action: () => navigate("/coming-soon"),
               },
             ].map((item) => (
               <button

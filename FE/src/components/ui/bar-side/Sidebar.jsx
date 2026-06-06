@@ -13,6 +13,8 @@ import UserSection from "./UserSection";
  */
 
 // ── Menu definitions per role ──────────────────────────────────────────────
+// [NOTE] comingSoon: true → item tampil dengan badge "Soon", pointer-events: none.
+//        Tidak perlu hapus dari menu — cukup flag agar user tahu fitur belum aktif.
 
 const PATIENT_MENU = [
   {
@@ -30,7 +32,6 @@ const PATIENT_MENU = [
   {
     label: "Bookings",
     to: "/patient/booking",
-    badge: 2,
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -60,14 +61,30 @@ const PATIENT_MENU = [
     ),
   },
   {
+    // [NOTE] Products → Coming Soon. Route /patient/products terdaftar tapi
+    //        menampilkan InProductPage yang juga placeholder.
+    //        comingSoon: true memastikan sidebar tidak bisa diklik.
     label: "Products",
-    to: "/patient/products", // [FIX] was "/patient/products" — route tidak terdaftar di index.jsx.
-    //       ProductsPage adalah public page di path /products,
-    //       bukan protected route di bawah /patient/.
+    to: "/patient/products",
+    comingSoon: true,
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
         <line x1="7" y1="7" x2="7.01" y2="7" />
+      </svg>
+    ),
+  },
+  {
+    // [NOTE] Cart → Coming Soon. Route /patient/cart terdaftar (CartPage.jsx)
+    //        dan menampilkan placeholder "Product Shop Coming Soon".
+    label: "Cart",
+    to: "/patient/cart",
+    comingSoon: true,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <circle cx="9" cy="21" r="1" />
+        <circle cx="20" cy="21" r="1" />
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
       </svg>
     ),
   },
@@ -89,7 +106,6 @@ const DOCTOR_MENU = [
   {
     label: "My Schedule",
     to: "/doctor/schedule",
-    badge: 3,
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -125,7 +141,6 @@ const DOCTOR_MENU = [
   },
 ];
 
-
 const ADMIN_MENU = [
   {
     label: "Dashboard",
@@ -142,7 +157,6 @@ const ADMIN_MENU = [
   {
     label: "Bookings",
     to: "/admin/bookings",
-    badge: 5,
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -222,14 +236,6 @@ export default function Sidebar({ open, collapsed, onClose }) {
 
   const SIDEBAR_WIDTH = collapsed ? 64 : 240;
 
-  // Inject CSS variable for Navbar offset
-  useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--sidebar-width",
-      `${SIDEBAR_WIDTH}px`
-    );
-  }, [SIDEBAR_WIDTH]);
-
   return (
     <>
       {/* Mobile backdrop */}
@@ -255,7 +261,6 @@ export default function Sidebar({ open, collapsed, onClose }) {
           flexDirection: "column",
           zIndex: 50,
           transition: "transform 0.3s ease, width 0.3s ease",
-          // Mobile: slide in/out
           transform: open || window.innerWidth >= 1024 ? "translateX(0)" : "translateX(-100%)",
           overflowX: "hidden",
         }}
@@ -333,6 +338,7 @@ export default function Sidebar({ open, collapsed, onClose }) {
               children={item.children}
               collapsed={collapsed}
               badge={item.badge}
+              comingSoon={item.comingSoon}
             />
           ))}
         </nav>

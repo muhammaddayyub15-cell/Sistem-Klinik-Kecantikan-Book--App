@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBooking } from "../../contexts/BookingContext";
+import { getOrders } from "../../api/orderApi";
 
 // ── Static data ───────────────────────────────────────────────────────────────
 
@@ -10,13 +11,15 @@ const STATUS_STYLES = {
   pending: { bg: "rgba(184,124,90,0.12)", color: "#8b4c34", label: "Pending" },
   cancelled: { bg: "rgba(200,80,80,0.1)", color: "#9a3030", label: "Cancelled" },
   done: { bg: "rgba(90,120,180,0.1)", color: "#2c4a8a", label: "Done" },
-  delivered: { bg: "rgba(134,180,134,0.12)", color: "#3a7a3a", label: "Delivered" },
+  paid: { bg: "rgba(134,180,134,0.12)", color: "#3a7a3a", label: "Paid" },
+  completed: { bg: "rgba(90,120,180,0.1)", color: "#2c4a8a", label: "Completed" },
 };
 
+// [NOTE] comingSoon: true → render div non-clickable dengan badge "Coming Soon"
 const QUICK_ACTIONS = [
   { icon: "◈", label: "Book Treatment", to: "/patient/booking", desc: "Schedule a new session" },
   { icon: "◇", label: "My Bookings", to: "/patient/my-bookings", desc: "View & manage bookings" },
-  { icon: "✦", label: "Shop Products", to: "/patient/products", desc: "Browse skincare range" },
+  { icon: "✦", label: "Shop Products", to: null, desc: "Browse skincare range", comingSoon: true },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -27,6 +30,13 @@ function getGreeting() {
   if (hour < 17) return "Good afternoon";
   return "Good evening";
 }
+
+// [NOTE] Strip prefix "dr." / "Dr." dari full_name jika sudah ada di data DB
+//        agar tidak double prefix "dr. dr. Nama"
+const stripDrPrefix = (name) =>
+  name ? name.replace(/^dr\.?\s*/i, "").trim() : "—";
+
+const fmt = (n) => "Rp " + Number(n).toLocaleString("id-ID");
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -93,14 +103,41 @@ export function PatientDashboardPage() {
   const { user } = useAuth();
   const { bookings, fetchBookings, isLoading } = useBooking();
 
+  // [NOTE] Recent orders state — fetch terpisah dari bookings
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
   const greeting = getGreeting();
 
+  useEffect(() => { fetchBookings(); }, []);
+
+  // Fetch 3 order terbaru untuk Recent Orders card
   useEffect(() => {
-    fetchBookings();
+    const fetchRecentOrders = async () => {
+      setLoadingOrders(true);
+      try {
+        const res = await getOrders();
+        const data = res.data?.data?.data ?? res.data?.data ?? res.data ?? [];
+        // Ambil 3 terbaru saja untuk preview di dashboard
+        // [FIX] Filter hanya booking-only orders (ada booking object) —
+        //       product orders disembunyikan karena Products masih Coming Soon
+        const bookingOrders = Array.isArray(data)
+          ? data.filter(o => (o.order_items ?? o.items ?? []).length === 0)
+          : [];
+        setRecentOrders(bookingOrders.slice(0, 3));
+      } catch {
+        // Gagal fetch order tidak perlu tampilkan error di dashboard —
+        // cukup tampilkan empty state, user bisa lihat detail di /patient/order
+        setRecentOrders([]);
+      } finally {
+        setLoadingOrders(false);
+      }
+    };
+    fetchRecentOrders();
   }, []);
 
-  // ── Derived stats dari bookings API ──────────────────────────────────────
+  // ── Derived stats ─────────────────────────────────────────────────────────
   const upcomingBookings = bookings
     .filter(b => ["pending", "confirmed"].includes(b.status))
     .slice(0, 3);
@@ -120,7 +157,7 @@ export function PatientDashboardPage() {
 
   const SKIN_STATS = [
     { label: "Sessions", value: isLoading ? "…" : String(sessionsDone) },
-    { label: "Orders", value: "—" },
+    { label: "Orders", value: loadingOrders ? "…" : String(recentOrders.length) },
     { label: "Next Visit", value: isLoading ? "…" : nextVisitLabel },
   ];
 
@@ -131,13 +168,11 @@ export function PatientDashboardPage() {
       `}</style>
 
       <div className="min-h-screen bg-[#faf8f5] text-[#2c1f1a]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="max-w-5xl mx-auto px-6 py-10 pt-24 lg:pt-10">
 
           {/* ── Greeting ── */}
           <div className="mb-10">
-            <p className="text-[11px] tracking-[0.1em] uppercase text-[#b87c5a] mb-1">
-              {greeting}
-            </p>
+            <p className="text-[11px] tracking-[0.1em] uppercase text-[#b87c5a] mb-1">{greeting}</p>
             <h1
               className="text-4xl lg:text-5xl font-normal leading-tight text-[#2c1f1a]"
               style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
@@ -161,7 +196,6 @@ export function PatientDashboardPage() {
             >
               ✦
             </div>
-
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div>
                 <p className="text-[11px] tracking-[0.1em] uppercase text-[#8b4c34] mb-2">
@@ -177,7 +211,6 @@ export function PatientDashboardPage() {
                   You're doing great — consistency is key to glowing skin.
                 </p>
               </div>
-
               <div className="flex gap-6">
                 {SKIN_STATS.map((s) => (
                   <div key={s.label} className="text-center">
@@ -195,18 +228,34 @@ export function PatientDashboardPage() {
           </div>
 
           {/* ── Quick Actions ── */}
-          <div className="grid grid-cols-3 gap-4 mb-10">
-            {QUICK_ACTIONS.map((a) => (
-              <Link
-                key={a.label}
-                to={a.to}
-                className="group p-6 rounded-2xl border border-[rgba(184,124,90,0.12)] bg-white transition-all duration-300 hover:-translate-y-0.5"
-              >
-                <div className="text-2xl text-[#b87c5a] mb-3">{a.icon}</div>
-                <div className="text-sm font-medium text-[#2c1f1a] mb-0.5">{a.label}</div>
-                <div className="text-xs text-[#9a6e62]">{a.desc}</div>
-              </Link>
-            ))}
+          {/* [FIX] Wrapper grid ditambah kembali — sebelumnya map() tanpa div grid
+                   sehingga 3 card render vertikal bukan 3 kolom */}
+          <div className="grid grid-cols-3 sm:grid-cols-3 gap-3 mb-10">
+            {QUICK_ACTIONS.map((a) =>
+              a.comingSoon ? (
+                <div
+                  key={a.label}
+                  className="p-4 sm:p-6 rounded-2xl border border-[rgba(184,124,90,0.08)] bg-white opacity-60 cursor-not-allowed relative"
+                >
+                  <div className="text-2xl text-[#b87c5a] mb-3">{a.icon}</div>
+                  <div className="text-sm font-medium text-[#2c1f1a] mb-0.5">{a.label}</div>
+                  <div className="text-xs text-[#9a6e62] mb-2">{a.desc}</div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[rgba(184,124,90,0.1)] text-[#8b4c34] font-medium tracking-wide">
+                    Coming Soon
+                  </span>
+                </div>
+              ) : (
+                <Link
+                  key={a.label}
+                  to={a.to}
+                  className="group p-4 sm:p-6 rounded-2xl border border-[rgba(184,124,90,0.12)] bg-white transition-all duration-300 hover:-translate-y-0.5"
+                >
+                  <div className="text-2xl text-[#b87c5a] mb-3">{a.icon}</div>
+                  <div className="text-sm font-medium text-[#2c1f1a] mb-0.5">{a.label}</div>
+                  <div className="text-xs text-[#9a6e62]">{a.desc}</div>
+                </Link>
+              )
+            )}
           </div>
 
           {/* ── Cards Grid ── */}
@@ -219,7 +268,6 @@ export function PatientDashboardPage() {
                 title="Bookings"
                 action={<BadgeLink to="/patient/my-bookings">View all</BadgeLink>}
               />
-
               {isLoading ? (
                 <div className="flex flex-col gap-3">
                   {[1, 2].map(i => (
@@ -240,13 +288,17 @@ export function PatientDashboardPage() {
                           </p>
                           <StatusBadge status={b.status} />
                         </div>
+                        {/* [FIX] stripDrPrefix — cegah "dr. dr. Nama" jika DB sudah ada prefix */}
                         <p className="text-xs mt-0.5 text-[#9a6e62]">
-                          dr. {b.doctor?.user?.full_name ?? "—"}
+                          dr. {stripDrPrefix(b.doctor?.user?.full_name)}
                         </p>
                         <p className="text-xs mt-1 font-medium text-[#b87c5a]">
-                          {new Date(b.booked_date).toLocaleDateString("id-ID",
-                            { weekday: "short", day: "numeric", month: "short", year: "numeric" })} .
-                          {b.start_time ?? b.doctorSchedule?.start_time ?? ""}
+                          {new Date(b.booked_date).toLocaleDateString("id-ID", {
+                            weekday: "short", day: "numeric", month: "short", year: "numeric",
+                          })}
+                          {(b.start_time ?? b.doctorSchedule?.start_time)
+                            ? ` · ${b.start_time ?? b.doctorSchedule?.start_time}`
+                            : ""}
                         </p>
                       </div>
                     </div>
@@ -255,14 +307,47 @@ export function PatientDashboardPage() {
               )}
             </div>
 
-            {/* Recent Orders — masih static, akan diupdate saat Order API tersedia */}
+            {/* Recent Orders — [FIX] sekarang fetch dari API, bukan static empty state */}
             <div className="rounded-2xl p-7 bg-white border border-[rgba(184,124,90,0.12)]">
               <SectionHeader
                 eyebrow="Recent"
                 title="Orders"
                 action={<BadgeLink to="/patient/order">View all</BadgeLink>}
               />
-              <EmptyState icon="◇" text="No orders yet" />
+              {loadingOrders ? (
+                <div className="flex flex-col gap-3">
+                  {[1, 2].map(i => (
+                    <div key={i} className="h-16 rounded-xl bg-[rgba(184,124,90,0.06)] animate-pulse" />
+                  ))}
+                </div>
+              ) : recentOrders.length === 0 ? (
+                <EmptyState icon="◇" text="No orders yet" />
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {recentOrders.map((o) => (
+                    <div key={o.order_id} className="flex items-start gap-4 p-4 rounded-xl bg-[#faf8f5]">
+                      <ItemIcon icon="◈" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          {/* Booking-only order: tampilkan service name dari booking */}
+                          <p className="text-sm font-medium text-[#2c1f1a] truncate">
+                            {o.booking?.service?.service_name
+                              ?? (o.order_items ?? o.items ?? [])[0]?.product_name_snapshot
+                              ?? "Order"}
+                          </p>
+                          <StatusBadge status={o.status} />
+                        </div>
+                        <p className="text-xs mt-0.5 text-[#9a6e62]">
+                          #{o.order_number ?? o.order_id}
+                        </p>
+                        <p className="text-xs mt-1 font-medium text-[#b87c5a]">
+                          {fmt(o.total_amount)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>

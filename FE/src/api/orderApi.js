@@ -1,67 +1,49 @@
 import api from "./axios";
 
 // ─── Order API ────────────────────────────────────────────────────────────
-// [NOTE] Semua fungsi return raw axios response.
-//        Destructuring res.data dilakukan di useOrder hook.
+// Semua fungsi return raw axios response.
+// Destructuring res.data dilakukan di komponen / context.
 //
-// Endpoint yang diasumsikan (Order Service via Gateway):
-//   GET    /orders           → { data: Order[] }
-//   GET    /orders/:id       → { data: Order }
-//   POST   /orders           → { data: Order }
-//   PATCH  /orders/:id/cancel → { data: Order }
-//
-// Tipe Order (referensi dari skema Order DB — menggunakan snapshot, bukan FK):
+// Tipe Order (monolith — snapshot pattern):
 //   {
-//     id, status: 'pending'|'paid'|'cancelled',
+//     order_id, order_number, status: 'pending'|'paid'|'cancelled',
 //     patient_id_snapshot, patient_name_snapshot,
-//     booking_id_snapshot,
-//     total_amount, created_at,
-//     items: [{
-//       id, product_id_snapshot, product_name_snapshot,
-//       qty, unit_price_snapshot
-//     }],
-//     payment: {
-//       id, status: 'pending'|'success'|'failed',
-//       midtrans_order_id, payment_url, paid_at
-//     }
+//     booking_id, total_amount, created_at,
+//     booking: { booking_id, service: { service_name, base_price } },
+//     order_items: [],   // kosong untuk booking-only order
+//     payment: { payment_id, status, payment_url, paid_at } | null
 //   }
-//
-//        Order Service adalah service terpisah dari Core Service.
-//        Semua data produk dan patient di order adalah snapshot — tidak akan
-//        berubah meski data aslinya di-update. Ini by design (lihat SYSTEM_ARCHITECTURE.md).
 
-// ── Get All Orders ────────────────────────────────────────────────────────
-// @param {{ status?: string, page?: number, limit?: number }} params
-//       Backend filter berdasarkan role dari token:
-//        - patient → hanya ordernya sendiri
-//        - admin   → semua order
+// ── Get Orders ────────────────────────────────────────────────────────────
+// [FIX] Sebelumnya GET /orders → 403 untuk patient (route role:admin only).
+//       Patient harus hit GET /orders/patient/me yang resolve dari token.
+//       Admin tetap bisa hit GET /orders langsung.
+// @param {{ status?: string, page?: number, per_page?: number }} params
 export const getOrders = (params = {}) =>
+  api.get("/orders/patient/me", { params });
+
+// getOrdersAdmin: khusus admin — hit GET /orders dengan pagination
+export const getOrdersAdmin = (params = {}) =>
   api.get("/orders", { params });
 
-export const getOrdersByPatient = (patientId) =>
-  api.get(`/orders/patient/${patientId}`);
-
 // ── Get Order Detail ──────────────────────────────────────────────────────
-// @param {string|number} id
-// [NOTE] Response include items[] dan payment object.
+// @param {string|number} id — order_id
 export const getOrderDetail = (id) =>
   api.get(`/orders/${id}`);
 
 // ── Create Order ──────────────────────────────────────────────────────────
-// @param {{ booking_id?: number|null, items: Array<{ product_id: number, qty: number }> }} data
-// [NOTE] booking_id opsional — order bisa berdiri sendiri (beli produk tanpa booking)
-//        atau terikat ke booking tertentu.
-//        Backend yang akan:
-//          1. Fetch snapshot data patient dari Core Service
-//          2. Fetch snapshot harga produk dari Product Service
-//          3. Buat payment record + request Midtrans payment URL
-//          4. Return order + payment_url untuk redirect ke Midtrans
+// Booking-only flow:
+// @param {{ booking_id: number }} data
+// total_amount diambil dari booking.service.base_price di backend.
+// patient_id diambil dari token di backend.
+//
+// Product-only flow (Coming Soon):
+// @param {{ items: Array<{ product_id: number, qty: number }>, booking_id?: number }} data
 export const createOrder = (data) =>
   api.post("/orders", data);
 
 // ── Cancel Order ──────────────────────────────────────────────────────────
-// @param {string|number} id
-//        Hanya bisa cancel jika status masih 'pending' (belum dibayar).
-//        Backend akan trigger refund ke Midtrans jika sudah terlanjur 'paid'.
+// @param {string|number} id — order_id
+// Hanya bisa cancel jika status masih 'pending'.
 export const cancelOrder = (id) =>
   api.patch(`/orders/${id}/cancel`);

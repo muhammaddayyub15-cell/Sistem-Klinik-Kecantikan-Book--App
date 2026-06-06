@@ -24,6 +24,24 @@ export function BookingProvider({ children }) {
   // ── Helper: reset error ───────────────────────────────────────────────
   const clearError = useCallback(() => setError(null), []);
 
+  // ── Helper: extract pesan error dari response ─────────────────────────
+  // [FIX] Sebelumnya hanya pakai err.normalizedMessage — tidak menangkap
+  //       validation errors (422) dari BE yang ada di errors object.
+  //       Urutan prioritas:
+  //         1. errors object (422 validation) → ambil pesan pertama
+  //         2. normalizedMessage dari axios interceptor
+  //         3. fallback string
+  const extractErrorMessage = (err, fallback = "Terjadi kesalahan.") => {
+    const errData = err?.response?.data;
+    if (errData?.errors) {
+      // Ambil pesan pertama dari errors object
+      // e.g. { booked_date: ["This slot is already taken."] } → "This slot is already taken."
+      const firstMsg = Object.values(errData.errors).flat()[0];
+      if (firstMsg) return firstMsg;
+    }
+    return errData?.message ?? err?.normalizedMessage ?? fallback;
+  };
+
   // ── fetchBookings ─────────────────────────────────────────────────────
   // Fetch list booking. Backend auto-filter berdasarkan role dari token.
   // @param {{ status?: string, page?: number, limit?: number }} params
@@ -37,7 +55,7 @@ export function BookingProvider({ children }) {
       const data = res.data?.data ?? res.data;
       setBookings(data);
     } catch (err) {
-      setError(err.normalizedMessage ?? "Gagal memuat data booking.");
+      setError(extractErrorMessage(err, "Gagal memuat data booking."));
     } finally {
       setIsLoading(false);
     }
@@ -55,7 +73,7 @@ export function BookingProvider({ children }) {
       setActiveBooking(data);
       return data;
     } catch (err) {
-      setError(err.normalizedMessage ?? "Gagal memuat detail booking.");
+      setError(extractErrorMessage(err, "Gagal memuat detail booking."));
       return null;
     } finally {
       setIsLoading(false);
@@ -63,8 +81,19 @@ export function BookingProvider({ children }) {
   }, []);
 
   // ── createBooking ─────────────────────────────────────────────────────
-  // @param {{ doctor_id: number, service_id: number, booked_at: string, notes?: string }} data
-  // Return: booking baru atau null jika gagal.
+  // @param {{
+  //   doctor_id:          number,
+  //   service_id:         number,
+  //   doctor_schedule_id: number,
+  //   booked_date:        string,   // format 'Y-m-d'
+  //   notes?:             string
+  // }} data
+  // Return: booking baru (object) jika sukses,
+  //         atau { __error: string } jika gagal.
+  // [FIX] Sebelumnya return null saat gagal — BookingPage baca contextError
+  //       yang masih stale (race condition: setError async, baca langsung setelah await).
+  //       Sekarang error message dikembalikan langsung dalam return value
+  //       sehingga BookingPage tidak perlu bergantung pada context state.
   const createBooking = useCallback(async (data) => {
     setIsLoading(true);
     setError(null);
@@ -77,8 +106,11 @@ export function BookingProvider({ children }) {
       setBookings((prev) => [newBooking, ...prev]);
       return newBooking;
     } catch (err) {
-      setError(err.normalizedMessage ?? "Gagal membuat booking.");
-      return null;
+      const msg = extractErrorMessage(err, "Gagal membuat booking.");
+      setError(msg);
+      // Return sentinel object agar BookingPage bisa baca pesan error
+      // tanpa bergantung pada context state yang belum re-render.
+      return { __error: msg };
     } finally {
       setIsLoading(false);
     }
@@ -87,7 +119,7 @@ export function BookingProvider({ children }) {
   // ── updateBookingStatus ───────────────────────────────────────────────
   // Dipakai oleh doctor (confirm/done) dan admin (semua status) dan patient (cancel).
   // @param {string|number} id
-  // @param {'confirmed'|'done'|'cancelled'} status
+  // @param {'confirmed'|'in_progress'|'completed'|'cancelled'} status
   const updateBookingStatus = useCallback(async (id, status) => {
     setIsLoading(true);
     setError(null);
@@ -96,18 +128,23 @@ export function BookingProvider({ children }) {
       const updated = res.data?.data ?? res.data;
 
       // Update item di list secara lokal — tidak perlu refetch semua.
+      // [NOTE] Gunakan booking_id (custom PK) bukan id untuk matching
       setBookings((prev) =>
-        prev.map((b) => (b.id === updated.id ? updated : b))
+        prev.map((b) =>
+          (b.booking_id ?? b.id) === (updated.booking_id ?? updated.id) ? updated : b
+        )
       );
 
       // Jika booking yang di-update adalah activeBooking, sync juga.
-      if (activeBooking?.id === updated.id) {
+      const updatedKey = updated.booking_id ?? updated.id;
+      const activeKey  = activeBooking?.booking_id ?? activeBooking?.id;
+      if (activeKey && activeKey === updatedKey) {
         setActiveBooking(updated);
       }
 
       return updated;
     } catch (err) {
-      setError(err.normalizedMessage ?? "Gagal mengubah status booking.");
+      setError(extractErrorMessage(err, "Gagal mengubah status booking."));
       return null;
     } finally {
       setIsLoading(false);

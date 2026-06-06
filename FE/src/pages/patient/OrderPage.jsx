@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
 import { getOrders } from "../../api/orderApi";
-import { getOrdersByPatient } from "../../api/orderApi";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -52,11 +50,11 @@ function EmptyState() {
       <span className="text-5xl opacity-20 text-[#b87c5a]">◇</span>
       <p className="text-sm text-[#c0a090]">No orders yet</p>
       <Link
-        to="/patient/products"
+        to="/patient/booking"
         className="text-sm px-6 py-2.5 rounded-full text-white transition hover:opacity-90"
         style={{ background: "linear-gradient(135deg, #c4865f, #9a5030)" }}
       >
-        Shop Products →
+        Book a Treatment →
       </Link>
     </div>
   );
@@ -65,25 +63,31 @@ function EmptyState() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function OrderPage() {
-  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // [FIX] Sebelumnya pakai getOrdersByPatient(user.patient_id) — user object dari
+  //       AuthContext tidak expose patient_id secara langsung (hanya id, role, email).
+  //       getOrders() sudah auto-filter by patient dari token di BE — lebih aman
+  //       dan tidak butuh patient_id dari FE.
   useEffect(() => {
-    const patientId = user?.patient_id;
-    if (!patientId) {
-      setLoading(false);
-      setError("Patient profile not found.");
-      return;
-    }
-
     const fetchOrders = async () => {
       setLoading(true);
+      setError("");
       try {
-        const res = await getOrdersByPatient(patientId);
+        const res = await getOrders();
+        // Tangani berbagai kemungkinan struktur response:
+        //   { data: { data: [...] } }  ← Laravel paginate
+        //   { data: { data: [...], ... } }
+        //   { data: [...] }            ← plain array
         const data = res.data?.data?.data ?? res.data?.data ?? res.data ?? [];
-        setOrders(Array.isArray(data) ? data : []);
+        // [FIX] Hanya tampilkan booking-only orders — product orders disembunyikan
+        //       karena fitur Products masih Coming Soon
+        const bookingOrders = Array.isArray(data)
+          ? data.filter(o => (o.order_items ?? o.items ?? []).length === 0)
+          : [];
+        setOrders(bookingOrders);
       } catch {
         setError("Gagal memuat riwayat order.");
       } finally {
@@ -92,7 +96,7 @@ export default function OrderPage() {
     };
 
     fetchOrders();
-  }, [user?.patient_id]);
+  }, []);
 
   return (
     <>
@@ -113,25 +117,25 @@ export default function OrderPage() {
               My <em className="italic text-[#b87c5a]">Orders</em>
             </h1>
             <p className="text-sm mt-2 text-[#9a6e62]">
-              Track and manage your product orders.
+              Track and manage your service booking payments.
             </p>
           </div>
 
-          {/* ── CTA Shop ── */}
+          {/* ── CTA Booking — Products Coming Soon, CTA diarahkan ke booking ── */}
           <div
             className="rounded-2xl p-6 mb-8 flex items-center justify-between gap-4"
             style={{ background: "linear-gradient(135deg, #f0ddd0, #e8c9b0)" }}
           >
             <div>
-              <p className="text-sm font-medium text-[#2c1208]">Need more products?</p>
-              <p className="text-xs mt-0.5 text-[#6b4030]">Browse our clinic-grade skincare range.</p>
+              <p className="text-sm font-medium text-[#2c1208]">Need a new appointment?</p>
+              <p className="text-xs mt-0.5 text-[#6b4030]">Book a consultation or treatment session.</p>
             </div>
             <Link
-              to="/patient/products"
+              to="/patient/booking"
               className="shrink-0 px-5 py-2.5 rounded-full text-white text-xs tracking-wide transition hover:opacity-90"
               style={{ background: "linear-gradient(135deg, #c4865f, #9a5030)" }}
             >
-              Shop Now →
+              Book Now →
             </Link>
           </div>
 
@@ -168,34 +172,56 @@ export default function OrderPage() {
                     </div>
                   </div>
 
-                  {/* Order items */}
-                  <div className="px-6 py-4">
-                    {(order.order_items ?? order.items ?? []).map((item, idx) => (
-                      <div
-                        key={item.item_id ?? idx}
-                        className="flex items-center justify-between py-2"
-                        style={{ borderBottom: "1px solid rgba(184,124,90,0.06)" }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
-                            style={{ background: "linear-gradient(135deg, #fdf6ef, #f0ddd0)", color: "#b87c5a" }}
-                          >
-                            ◈
+                  {/* Order items — booking-only order tidak punya items */}
+                  {(order.order_items ?? order.items ?? []).length > 0 && (
+                    <div className="px-6 py-4">
+                      {(order.order_items ?? order.items ?? []).map((item, idx) => (
+                        <div
+                          key={item.item_id ?? idx}
+                          className="flex items-center justify-between py-2"
+                          style={{ borderBottom: "1px solid rgba(184,124,90,0.06)" }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
+                              style={{ background: "linear-gradient(135deg, #fdf6ef, #f0ddd0)", color: "#b87c5a" }}
+                            >
+                              ◈
+                            </div>
+                            <div>
+                              <p className="text-sm text-[#2c1f1a]">
+                                {item.product_name_snapshot ?? item.product_name ?? "—"}
+                              </p>
+                              <p className="text-xs text-[#9a6e62]">Qty: {item.qty}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm text-[#2c1f1a]">
-                              {item.product_name_snapshot ?? item.product_name ?? "—"}
-                            </p>
-                            <p className="text-xs text-[#9a6e62]">Qty: {item.qty}</p>
-                          </div>
+                          <p className="text-sm font-medium text-[#2c1f1a]">
+                            {fmt((item.unit_price_snapshot ?? item.unit_price ?? 0) * item.qty)}
+                          </p>
                         </div>
-                        <p className="text-sm font-medium text-[#2c1f1a]">
-                          {fmt((item.unit_price_snapshot ?? item.unit_price ?? 0) * item.qty)}
-                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Booking-only order: tampilkan info service dari booking */}
+                  {(order.order_items ?? order.items ?? []).length === 0 && order.booking && (
+                    <div className="px-6 py-4">
+                      <div className="flex items-center gap-3 py-2">
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
+                          style={{ background: "linear-gradient(135deg, #fdf6ef, #f0ddd0)", color: "#b87c5a" }}
+                        >
+                          ✦
+                        </div>
+                        <div>
+                          <p className="text-sm text-[#2c1f1a]">
+                            {order.booking?.service?.service_name ?? "Clinic Service"}
+                          </p>
+                          <p className="text-xs text-[#9a6e62]">Appointment booking</p>
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Order footer */}
                   <div
@@ -205,12 +231,15 @@ export default function OrderPage() {
                     <div>
                       {order.payment?.status && (
                         <p className="text-xs text-[#9a6e62]">
-                          Payment: <span className="font-medium text-[#2c1f1a]">{order.payment.status}</span>
+                          Payment:{" "}
+                          <span className="font-medium text-[#2c1f1a] capitalize">
+                            {order.payment.status}
+                          </span>
                         </p>
                       )}
-                      {order.paid_at && (
+                      {order.payment?.paid_at && (
                         <p className="text-xs text-[#9a6e62] mt-0.5">
-                          Paid: {formatDate(order.paid_at)}
+                          Paid: {formatDate(order.payment.paid_at)}
                         </p>
                       )}
                     </div>

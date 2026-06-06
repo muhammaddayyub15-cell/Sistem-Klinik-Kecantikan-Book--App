@@ -13,6 +13,12 @@ const ProductsPage = lazy(() => import("../pages/ProductsPage"));
 const LoginPage = lazy(() => import("../pages/auth/LoginPage"));
 const RegisterPage = lazy(() => import("../pages/auth/RegisterPage"));
 
+// [NOTE] PaymentResultPage — PUBLIC (tidak di-protect) karena:
+//        Midtrans redirect langsung setelah pembayaran, token mungkin tidak
+//        dikirim ulang. Backend verify via webhook, bukan dari redirect ini.
+//        Route: /payment/result?order_id=...&status_code=...&transaction_status=...
+const PaymentResultPage = lazy(() => import("../pages/PaymentResultPage"));
+
 // Patient
 const PatientDashboard = lazy(() => import("../pages/patient/DashboardPage"));
 const BookingPage = lazy(() => import("../pages/patient/BookingPage"));
@@ -56,6 +62,12 @@ const AppRoutes = () => {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
+        {/* ── Payment Result — PUBLIC ──────────────────────────────────── */}
+        {/* [NOTE] Midtrans finish_url harus dikonfigurasi di backend:      */}
+        {/*        finish_url: `${FRONTEND_URL}/payment/result`             */}
+        {/*        Midtrans otomatis append query params ke URL ini.         */}
+        <Route path="/payment/result" element={<PaymentResultPage />} />
+
         {/* ── Patient ─────────────────────────────────────────────────── */}
         <Route element={<ProtectedRoute allowedRoles={["patient"]} />}>
           <Route element={<MainLayout />}>
@@ -94,6 +106,10 @@ const AppRoutes = () => {
             <Route path="/admin/products/stock" element={<ComingSoon title="Stock Logs" />} />
           </Route>
         </Route>
+
+        {/* ── Coming Soon standalone — untuk redirect dari UserSection ── */}
+        {/* [NOTE] Tidak di-protect agar semua role bisa akses             */}
+        <Route path="/coming-soon" element={<ComingSoon />} />
 
         {/* ── Catch-all ───────────────────────────────────────────────── */}
         <Route path="*" element={<NotFoundPage />} />

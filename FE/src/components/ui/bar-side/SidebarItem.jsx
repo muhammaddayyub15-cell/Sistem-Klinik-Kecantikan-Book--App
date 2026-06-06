@@ -3,8 +3,13 @@ import { NavLink, useLocation } from "react-router-dom";
 
 /**
  * SidebarItem — single navigation item for the sidebar.
+ *
+ * Props:
+ *   comingSoon : boolean — jika true, item tampil dim dengan badge "Soon"
+ *                          dan tidak bisa diklik (pointer-events: none).
+ *                          Tidak menggunakan NavLink agar tidak membuat route aktif.
  */
-export default function SidebarItem({ icon, label, to, children, collapsed, badge }) {
+export default function SidebarItem({ icon, label, to, children, collapsed, badge, comingSoon }) {
   const location = useLocation();
   const hasChildren = children && children.length > 0;
 
@@ -12,8 +17,7 @@ export default function SidebarItem({ icon, label, to, children, collapsed, badg
   const childActive = hasChildren && children.some((c) => location.pathname.startsWith(c.to));
   const [expanded, setExpanded] = useState(childActive);
 
-  const isActive = to && location.pathname === to;
-  const isParentActive = hasChildren && childActive;
+  const inactiveColor = "#7a5a52";
 
   const baseStyle = {
     display: "flex",
@@ -37,12 +41,6 @@ export default function SidebarItem({ icon, label, to, children, collapsed, badg
     color: "#8b4c34",
   };
 
-  const hoverStyle = {
-    background: "rgba(184,124,90,0.07)",
-  };
-
-  const inactiveColor = "#7a5a52";
-
   // Wrapper for tooltip on collapsed
   const TooltipWrapper = ({ children: c }) =>
     collapsed ? (
@@ -65,7 +63,7 @@ export default function SidebarItem({ icon, label, to, children, collapsed, badg
             zIndex: 100,
           }}
         >
-          {label}
+          {label}{comingSoon ? " (Soon)" : ""}
         </div>
       </div>
     ) : (
@@ -93,7 +91,52 @@ export default function SidebarItem({ icon, label, to, children, collapsed, badg
     </span>
   );
 
-  // Simple leaf item (no children)
+  // ── Coming Soon item — tidak bisa diklik, tampil dim dengan badge "Soon" ──
+  // [NOTE] Sengaja render sebagai <div> bukan NavLink/button agar:
+  //        1. Tidak trigger route navigation
+  //        2. cursor: not-allowed memberi feedback visual yang jelas
+  //        3. Tidak muncul sebagai "active" di NavLink
+  if (comingSoon) {
+    return (
+      <TooltipWrapper>
+        <div
+          style={{
+            ...baseStyle,
+            cursor: "not-allowed",
+            opacity: 0.45,
+            color: inactiveColor,
+          }}
+          title={`${label} — Coming Soon`}
+        >
+          <IconBox active={false} />
+          {!collapsed && (
+            <>
+              <span style={{ fontSize: 13, fontWeight: 400, flex: 1 }}>
+                {label}
+              </span>
+              {/* Badge "Soon" menggantikan badge angka */}
+              <span
+                style={{
+                  background: "rgba(184,124,90,0.1)",
+                  color: "#8b4c34",
+                  fontSize: 9,
+                  fontWeight: 600,
+                  padding: "2px 6px",
+                  borderRadius: 20,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Soon
+              </span>
+            </>
+          )}
+        </div>
+      </TooltipWrapper>
+    );
+  }
+
+  // ── Simple leaf item (no children) ───────────────────────────────────────
   if (!hasChildren && to) {
     return (
       <TooltipWrapper>
@@ -155,8 +198,9 @@ export default function SidebarItem({ icon, label, to, children, collapsed, badg
     );
   }
 
-  // Parent item with sub-menu
+  // ── Parent item with sub-menu ─────────────────────────────────────────────
   if (hasChildren) {
+    const isParentActive = childActive;
     return (
       <div>
         <TooltipWrapper>
@@ -219,45 +263,42 @@ export default function SidebarItem({ icon, label, to, children, collapsed, badg
             }}
           >
             <div style={{ paddingLeft: 14, paddingTop: 2 }}>
-              {children.map((child) => {
-                const childIsActive = location.pathname === child.to;
-                return (
-                  <NavLink
-                    key={child.to}
-                    to={child.to}
-                    style={({ isActive: a }) => ({
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      fontSize: 12.5,
-                      fontWeight: a ? 500 : 400,
-                      color: a ? "#8b4c34" : "#9a7065",
-                      textDecoration: "none",
-                      background: a ? "rgba(184,124,90,0.09)" : "transparent",
-                      transition: "all 0.2s",
-                      marginBottom: 2,
-                    })}
-                  >
-                    {({ isActive: a }) => (
-                      <>
-                        <span
-                          style={{
-                            width: 5,
-                            height: 5,
-                            borderRadius: "50%",
-                            background: a ? "#b87c5a" : "rgba(184,124,90,0.3)",
-                            flexShrink: 0,
-                            transition: "all 0.2s",
-                          }}
-                        />
-                        {child.label}
-                      </>
-                    )}
-                  </NavLink>
-                );
-              })}
+              {children.map((child) => (
+                <NavLink
+                  key={child.to}
+                  to={child.to}
+                  style={({ isActive: a }) => ({
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    fontSize: 12.5,
+                    fontWeight: a ? 500 : 400,
+                    color: a ? "#8b4c34" : "#9a7065",
+                    textDecoration: "none",
+                    background: a ? "rgba(184,124,90,0.09)" : "transparent",
+                    transition: "all 0.2s",
+                    marginBottom: 2,
+                  })}
+                >
+                  {({ isActive: a }) => (
+                    <>
+                      <span
+                        style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: "50%",
+                          background: a ? "#b87c5a" : "rgba(184,124,90,0.3)",
+                          flexShrink: 0,
+                          transition: "all 0.2s",
+                        }}
+                      />
+                      {child.label}
+                    </>
+                  )}
+                </NavLink>
+              ))}
             </div>
           </div>
         )}

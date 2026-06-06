@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { createOrder } from "../api/orderApi";
+import { initiatePayment } from "../api/paymentApi";
 import { useAuth } from "./AuthContext";
 
 // ─── Context ───────────────────────────────────────────────────────────────
@@ -7,8 +8,8 @@ const CartContext = createContext(null);
 
 // ─── Storage key ──────────────────────────────────────────────────────────
 //        Cart disimpan di localStorage agar tidak hilang saat user refresh halaman.
-//        Berbeda dengan session auth yang perlu validasi ke server,
-//        cart data cukup persisted di client side.
+//        pendingBookingId TIDAK disimpan ke localStorage — sengaja session-only
+//        agar tidak stale jika user buka halaman cart di lain waktu tanpa booking baru.
 const STORAGE_KEY_CART = "aura_cart";
 
 // ─── Helper: baca cart dari localStorage ─────────────────────────────────
@@ -34,6 +35,12 @@ export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState(() => loadCartFromStorage());
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+
+  // pendingBookingId: booking_id yang akan dilink ke order saat checkout.
+  // Di-set oleh BookingPage setelah booking berhasil, dibaca CartPage saat checkout.
+  // Null jika user beli produk tanpa booking (langsung dari /patient/products).
+  const [pendingBookingId, setPendingBookingId] = useState(null);
+
   const { user } = useAuth();
 
   // ── Helper: update state + sync ke localStorage ───────────────────────
@@ -53,9 +60,7 @@ export function CartProvider({ children }) {
     syncCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
       if (existing) {
-        //      Tidak ada validasi max stock di sini.
-        //        Validasi stock dilakukan di backend saat checkout.
-        //        Jika ingin validasi di frontend, bandingkan dengan product.stock_qty.
+        //        Validasi max stock dilakukan di backend saat checkout.
         return prev.map((item) =>
           item.id === product.id
             ? { ...item, qty: item.qty + qty }
@@ -94,16 +99,22 @@ export function CartProvider({ children }) {
   }, [syncCart]);
 
   // ── checkout ──────────────────────────────────────────────────────────
-  // Kirim cart sebagai order ke Order Service.
-  // @param {{ bookingId?: number|null }} options - opsional, jika order terkait booking
-  // Return: { order, paymentUrl } atau null jika gagal.
+  // Alur lengkap:
+  //   1. POST /orders → buat order + kurangi stok
+  //   2. POST /payments/initiate → buat payment record + request Snap token ke Midtrans
+  //   3. Return { order, paymentUrl } → CartPage redirect ke Midtrans
   //
-  //        Setelah checkout berhasil, backend return payment_url Midtrans.
-  //        Redirect ke payment_url dilakukan di komponen/page,
-  //        bukan di sini, agar context tidak coupling ke router.
-  const checkout = useCallback(async ({ bookingId = null } = {}) => {
-    console.log('checkout called, user:', user);        // ← tambah ini
-    console.log('cartItems:', cartItems);               // ← tambah ini
+  // [NOTE] Dua langkah ini dipisah endpoint karena PaymentService membutuhkan
+  //        order_id yang baru dibuat. Keduanya dipanggil otomatis di sini
+  //        agar CartPage tidak perlu tahu detail alur payment.
+  //
+  // [NOTE] booking_id diambil dari pendingBookingId yang di-set BookingPage.
+  //        Setelah checkout berhasil, pendingBookingId di-reset ke null.
+  //        Redirect ke payment_url dilakukan di CartPage, bukan di sini,
+  //        agar context tidak coupling ke router.
+  //
+  // Return: { order, paymentUrl } atau null jika gagal.
+  const checkout = useCallback(async () => {
     if (cartItems.length === 0) {
       setCheckoutError("Cart kosong. Tambahkan produk terlebih dahulu.");
       return null;
@@ -113,39 +124,45 @@ export function CartProvider({ children }) {
     setCheckoutError(null);
 
     try {
-      const payload = {
-        patient_id: user?.patient_id,
-        // [NOTE] booking_id opsional — null jika beli produk tanpa booking.
-        ...(bookingId && { booking_id: bookingId }),
+      // ── Step 1: Buat order ───────────────────────────────────────────
+      const orderPayload = {
+        ...(pendingBookingId && { booking_id: pendingBookingId }),
         items: cartItems.map((item) => ({
           product_id: item.id,
           qty: item.qty,
         })),
       };
-      console.log("checkout payload:", payload); // ← tambah ini perlu hapus
 
-      const res = await createOrder(payload);
-      const order = res.data?.data ?? res.data;
+      const orderRes = await createOrder(orderPayload);
+      const order    = orderRes.data?.data ?? orderRes.data;
 
-      // Bersihkan cart setelah order berhasil dibuat.
+      // ── Step 2: Inisiasi payment untuk dapat payment_url ─────────────
+      // order_id dari response order yang baru dibuat
+      const orderId   = order?.order_id ?? order?.id;
+      const payRes    = await initiatePayment(orderId);
+      const payData   = payRes.data?.data ?? payRes.data;
+      const paymentUrl = payData?.payment_url ?? null;
+
+      // Bersihkan cart dan pendingBookingId setelah semua berhasil
       clearCart();
+      setPendingBookingId(null);
 
-      //  payment_url ada di order.payment.payment_url.
-      //        Page yang memanggil checkout() bertanggung jawab untuk redirect.
-      return {
-        order,
-        paymentUrl: order?.payment?.payment_url ?? null,
-      };
+      // CartPage yang bertanggung jawab redirect ke Midtrans
+      return { order, paymentUrl };
+
     } catch (err) {
-      setCheckoutError(err.normalizedMessage ?? "Checkout gagal. Silakan coba lagi.");
+      setCheckoutError(
+        err?.response?.data?.message ??
+        err.normalizedMessage ??
+        "Checkout gagal. Silakan coba lagi."
+      );
       return null;
     } finally {
       setIsCheckingOut(false);
     }
-  }, [cartItems, clearCart, user]);
+  }, [cartItems, clearCart, pendingBookingId]);
 
   // ── Derived values (memoized) ─────────────────────────────────────────
-  // Dihitung satu kali saat cartItems berubah, tidak setiap render.
   const cartSummary = useMemo(() => {
     const totalItems = cartItems.reduce((sum, item) => sum + item.qty, 0);
     const totalPrice = cartItems.reduce(
@@ -160,6 +177,7 @@ export function CartProvider({ children }) {
     cartItems,
     isCheckingOut,
     checkoutError,
+    pendingBookingId,
 
     // Derived
     totalItems: cartSummary.totalItems,
@@ -172,6 +190,7 @@ export function CartProvider({ children }) {
     updateQty,
     clearCart,
     checkout,
+    setPendingBookingId,
     clearCheckoutError: () => setCheckoutError(null),
   };
 
@@ -183,7 +202,6 @@ export function CartProvider({ children }) {
 }
 
 // ─── Custom hook ──────────────────────────────────────────────────────────
-// Konsisten dengan pola useAuth di AuthContext dan useBooking di BookingContext.
 export const useCart = () => {
   const ctx = useContext(CartContext);
   if (!ctx) {
