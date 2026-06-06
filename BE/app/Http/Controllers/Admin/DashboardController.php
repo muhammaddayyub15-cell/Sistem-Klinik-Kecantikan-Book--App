@@ -43,4 +43,19 @@ class DashboardController extends Controller
             );
         }
     }
+
+
+// fungsi: ambil recent activity dengan pagination
+    // logic: terima query param ?page=N, return paginated activity
+    public function recentActivity(): JsonResponse
+    {
+        try {
+            $page = (int) request()->query('page', 1);
+            $data = $this->dashboardService->getRecentActivity($page);
+
+            return $this->successResponse($data, 'Recent activity retrieved');
+        } catch (\Exception $e) {
+            return $this->errorResponse('Failed to load activity', 500);
+        }
+    }
 }

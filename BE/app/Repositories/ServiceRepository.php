@@ -43,4 +43,11 @@ class ServiceRepository extends BaseRepository
             ->when($excludeId, fn($q) => $q->where('service_id', '!=', $excludeId))
             ->exists();
     }
+
+    // findAll: Ambil semua service urut by nama — tanpa filter is_active.
+    // Dipakai admin untuk tampilkan semua service termasuk yang non-aktif.
+    public function findAll(): Collection
+    {
+        return $this->model->orderBy('service_name')->get();
+    }
 }

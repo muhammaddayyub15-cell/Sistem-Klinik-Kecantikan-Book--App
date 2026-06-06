@@ -11,7 +11,10 @@ use App\Http\Controllers\Patient\PatientController;
 use App\Http\Controllers\Payment\PaymentController;
 use App\Http\Controllers\Product\ProductCategoryController;
 use App\Http\Controllers\Service\ServiceController;
+use App\Http\Controllers\Service\ServiceCategoryController;
+use App\Http\Controllers\Doctor\SpecializationController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\DashboardController;
 use Illuminate\Support\Facades\Route;
 
@@ -59,6 +62,13 @@ Route::prefix('doctors')->group(function () {
     });
 });
 
+// ── Specialization ─────────────────────────────────────────────────────
+// Publik — dipakai DoctorForm (admin) untuk dropdown spesialisasi saat create/edit dokter
+Route::prefix('specializations')->group(function () {
+    Route::get('/',     [SpecializationController::class, 'index']);
+    Route::get('/{id}', [SpecializationController::class, 'show']);
+});
+
 // ── Patient ────────────────────────────────────────────────────────────
 Route::prefix('patients')->middleware('auth:sanctum')->group(function () {
 
@@ -84,6 +94,13 @@ Route::prefix('services')->group(function () {
         Route::patch('/{id}/toggle', [ServiceController::class, 'toggle']);
     });
 });
+
+// ── Service Category ───────────────────────────────────────────────────
+// Publik — dipakai ServiceForm (admin) untuk dropdown kategori saat create/edit service.
+Route::prefix('service-categories')->group(function () {
+    Route::get('/',     [ServiceCategoryController::class, 'index']);
+});
+
 
 // ── Booking ────────────────────────────────────────────────────────────
 Route::prefix('bookings')->middleware('auth:sanctum')->group(function () {
@@ -178,7 +195,12 @@ Route::prefix('products')->group(function () {
 // ── Admin Dashboard ────────────────────────────────────────────────────
 // Aggregate stats — ganti ReportController dari microservice lama
 Route::prefix('admin')->middleware(['auth:sanctum', 'role:admin'])->group(function () {
-    Route::get('/dashboard', [DashboardController::class, 'index']);
+    Route::get('/dashboard',          [DashboardController::class, 'index']);
+    Route::get('/dashboard/activity', [DashboardController::class, 'recentActivity']);
+
+    // Users — query khusus admin
+    // GET /admin/users/unassigned-doctors → user role=doctor belum punya profil dokter
+    Route::get('/users/unassigned-doctors', [UserController::class, 'unassignedDoctors']);
 });
 
 // ── Notifications ──────────────────────────────────────────────────────

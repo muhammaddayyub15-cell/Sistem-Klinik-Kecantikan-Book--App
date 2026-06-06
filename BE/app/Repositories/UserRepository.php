@@ -46,4 +46,17 @@ class UserRepository extends BaseRepository
 
         return $user;
     }
+
+    // findUnassignedDoctors: Ambil users role=doctor yang belum punya profil dokter.
+    // Dipakai admin saat create doctor — hanya tampilkan user yang belum terassign.
+    public function findUnassignedDoctors(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->model
+            ->where('role', 'doctor')
+            ->where('status', 'active')
+            ->whereDoesntHave('doctor')
+            ->select('user_id', 'full_name', 'email', 'phone')
+            ->get();
+    }
+
 }

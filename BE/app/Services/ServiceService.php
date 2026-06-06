@@ -66,4 +66,9 @@ class ServiceService extends BaseService
             'is_active' => !$service->is_active,
         ]);
     }
+    // getAll: Ambil semua service tanpa filter is_active — dipakai admin ServicePage.
+    public function getAll(): Collection
+    {
+        return $this->serviceRepository->findAll();
+    }
 }

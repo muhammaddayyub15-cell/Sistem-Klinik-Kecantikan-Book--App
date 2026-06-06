@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Service;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
 use App\Http\Requests\Service\StoreServiceRequest;
 use App\Http\Requests\Service\UpdateServiceRequest;
 use App\Services\ServiceService;
@@ -19,11 +20,13 @@ class ServiceController extends Controller
     public function __construct(protected ServiceService $serviceService) {}
 
     // index: Ambil semua service yang aktif — public, dipakai BookingPage frontend.
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return $this->successResponse(
-            $this->serviceService->getAllActive()
-        );
+        $services = $request->query('all') === 'true' && auth('sanctum')->check()
+            ? $this->serviceService->getAll()
+            : $this->serviceService->getAllActive();
+
+        return $this->successResponse($services);
     }
 
     // show: Ambil detail satu service by ID.
