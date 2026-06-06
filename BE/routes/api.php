@@ -4,13 +4,14 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Booking\BookingController;
 use App\Http\Controllers\Doctor\DoctorController;
 use App\Http\Controllers\Doctor\ScheduleController;
+use App\Http\Controllers\Product\ProductController;
 use App\Http\Controllers\Medical\MedicalController;
 use App\Http\Controllers\Order\OrderController;
 use App\Http\Controllers\Patient\PatientController;
 use App\Http\Controllers\Payment\PaymentController;
 use App\Http\Controllers\Product\ProductCategoryController;
-use App\Http\Controllers\Product\ProductController;
 use App\Http\Controllers\Service\ServiceController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Admin\DashboardController;
 use Illuminate\Support\Facades\Route;
 
@@ -173,4 +174,16 @@ Route::prefix('products')->group(function () {
 // Aggregate stats — ganti ReportController dari microservice lama
 Route::prefix('admin')->middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index']);
+});
+
+// ── Notifications ──────────────────────────────────────────────────────
+Route::prefix('notifications')->middleware('auth:sanctum')->group(function () {
+    // Ambil semua notifikasi user yang login
+    Route::get('/',             [NotificationController::class, 'index']);
+    // Ambil notifikasi yang belum dibaca + count — untuk badge frontend
+    Route::get('/unread',       [NotificationController::class, 'unread']);
+    // Tandai satu notifikasi sebagai dibaca
+    Route::patch('/{id}/read',  [NotificationController::class, 'markAsRead']);
+    // Tandai semua notifikasi sebagai dibaca
+    Route::patch('/read-all',   [NotificationController::class, 'markAllAsRead']);
 });

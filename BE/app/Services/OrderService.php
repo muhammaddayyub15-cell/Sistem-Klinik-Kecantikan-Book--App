@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Models\Patient;
 use App\Models\Product;
+use App\Models\User;
 use App\Repositories\OrderRepository;
 use App\Repositories\OrderItemRepository;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -32,7 +34,7 @@ class OrderService extends BaseService
     // READ
     // =========================================================================
 
-    // getAllOrders: Ambil semua order dengan pagination — untuk admin.
+    // getAllOrders: Ambil semua order dengan pagination — admin only.
     public function getAllOrders(int $perPage = 15): LengthAwarePaginator
     {
         return $this->orderRepository->findAllPaginated($perPage);
@@ -41,7 +43,8 @@ class OrderService extends BaseService
     // getOrderById: Ambil detail satu order beserta items dan payment.
     public function getOrderById(int $id): Model
     {
-        return $this->orderRepository->findOrFail($id)->load(['orderItems', 'payment', 'booking']);
+        return $this->orderRepository->findOrFail($id)
+            ->load(['orderItems', 'payment', 'booking']);
     }
 
     // getOrdersByPatient: Ambil semua order milik pasien tertentu.
@@ -51,7 +54,7 @@ class OrderService extends BaseService
         return $this->orderRepository->findByPatientIdSnapshot($patientId);
     }
 
-    // getOrdersByStatus: Filter order berdasarkan status.
+    // getOrdersByStatus: Filter order berdasarkan status — admin only.
     public function getOrdersByStatus(string $status): Collection
     {
         return $this->orderRepository->findByStatus($status);
@@ -64,7 +67,7 @@ class OrderService extends BaseService
     // createOrder: Buat order baru + snapshot patient & product + kurangi stok.
     //
     // Alur:
-    // 1. Ambil patient dari DB via patient_id (bukan HTTP)
+    // 1. Resolve patient dari token (bukan dari request)
     // 2. Ambil semua produk sekaligus dengan lockForUpdate (cegah race condition stok)
     // 3. Validasi stok setiap produk
     // 4. Bangun item snapshot + hitung total
@@ -75,10 +78,13 @@ class OrderService extends BaseService
         return DB::transaction(function () use ($data) {
 
             // ── 1. PATIENT SNAPSHOT ──────────────────────────────────────────
-            // Ambil patient langsung dari DB — tidak perlu HTTP ke service lain
-            $patient = Patient::with('user')->findOrFail($data['patient_id']);
+            // Resolve patient dari token — tidak dari request frontend
+            /** @var User $user */
+            $user    = User::findOrFail(Auth::id());
+            $patient = Patient::with('user')
+                ->where('user_id', $user->user_id)
+                ->firstOrFail();
 
-            // Nama pasien diambil dari relasi user (kolom full_name ada di users)
             $patientName = $patient->user->full_name ?? 'Unknown';
 
             // ── 2. AMBIL PRODUK DENGAN LOCK ──────────────────────────────────
@@ -103,7 +109,6 @@ class OrderService extends BaseService
                     ]);
                 }
 
-                // Validasi stok — gunakan stock_qty (nama kolom di migration)
                 if ($product->stock_qty < $item['qty']) {
                     throw ValidationException::withMessages([
                         'stock' => "Stok tidak mencukupi untuk produk: {$product->product_name}",
@@ -125,7 +130,7 @@ class OrderService extends BaseService
                 'order_number'          => $this->generateOrderNumber(),
                 'patient_id_snapshot'   => $patient->patient_id,
                 'patient_name_snapshot' => $patientName,
-                'booking_id'            => $data['booking_id'] ?? null, // FIX: FK hidup, bukan snapshot
+                'booking_id'            => $data['booking_id'] ?? null,
                 'total_amount'          => $totalAmount,
                 'status'                => 'pending',
             ]);
@@ -156,6 +161,7 @@ class OrderService extends BaseService
     // =========================================================================
 
     // cancelOrder: Batalkan order — hanya bisa jika status masih pending.
+    // Dipakai patient via PATCH /orders/{id}/cancel.
     public function cancelOrder(int $id): Model
     {
         return DB::transaction(function () use ($id) {
@@ -174,13 +180,34 @@ class OrderService extends BaseService
         });
     }
 
+    // updateStatus: Update status order manual — admin only.
+    // Dipakai via PATCH /orders/{id}/status dari OrderController::updateStatus().
+    public function updateStatus(int $id, array $data): Model
+    {
+        return DB::transaction(function () use ($id, $data) {
+
+            $order = $this->orderRepository->findOrFail($id);
+
+            // Guard: order yang sudah final tidak bisa diubah lagi
+            if (in_array($order->status, ['cancelled'])) {
+                throw ValidationException::withMessages([
+                    'status' => 'Order yang sudah dibatalkan tidak dapat diubah statusnya.',
+                ]);
+            }
+
+            return $this->orderRepository->updateStatus($id, $data['status'], [
+                'paid_at'      => $data['status'] === 'paid'      ? now() : null,
+                'cancelled_at' => $data['status'] === 'cancelled'  ? now() : null,
+            ]);
+        });
+    }
+
     // =========================================================================
     // PRIVATE
     // =========================================================================
 
     // generateOrderNumber: Generate nomor order unik berformat ORD-YYYYMMDD-XXXX.
-    // Dipakai sebagai order_number saat order dibuat.
-    // PaymentService akan override ini dengan format timestamp saat initiate payment.
+    // PaymentService akan override format ini dengan timestamp saat initiate payment.
     private function generateOrderNumber(): string
     {
         return 'ORD-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4));

@@ -2,28 +2,25 @@
 
 namespace App\Http\Requests\Medical;
 
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
+// StorePrescriptionRequest: Validasi input saat menambah resep ke rekam medis.
+// Dipakai MedicalController::addPrescriptions() — doctor only.
 class StorePrescriptionRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         return [
-            //
+            'prescriptions'               => ['required', 'array', 'min:1'],
+            'prescriptions.*'             => ['required'],
+            'prescriptions.*.product_id'  => ['sometimes', 'integer', 'exists:products,product_id'],
+            'prescriptions.*.qty'         => ['sometimes', 'integer', 'min:1'],
+            'prescriptions.*.description' => ['sometimes', 'string'],
         ];
     }
 }

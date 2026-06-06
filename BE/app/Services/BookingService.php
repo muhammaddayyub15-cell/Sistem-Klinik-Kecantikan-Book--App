@@ -3,16 +3,15 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Models\Booking;
 use App\Repositories\BookingRepository;
 use App\Repositories\ScheduleRepository;
 use App\Events\Booking\BookingCreated;
+use App\Notifications\BookingStatusUpdatedNotification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
-
 
 // BookingService: Business logic untuk booking.
 // CATATAN: Tidak extend BaseService karena butuh dua repository (BookingRepository + ScheduleRepository).
@@ -63,8 +62,8 @@ class BookingService
 
             // ── 1. RESOLVE PATIENT ──────────────────────────────
             // User::findOrFail() return type adalah User — intelephense bisa resolve relasi patient.
-            // auth()->id() dijamin tidak null karena request sudah lewat middleware auth:sanctum.
-            $user = User::findOrFail(Auth::id());
+            // Auth::id() dijamin tidak null karena request sudah lewat middleware auth:sanctum.
+            $user    = User::findOrFail(Auth::id());
             $user->load('patient');
             $patient = $user->patient;
 
@@ -120,6 +119,7 @@ class BookingService
 
     // updateStatus: Update status booking dengan guard final state.
     // completed & cancelled tidak bisa diubah lagi — pakai isFinalized() dari Booking model.
+    // Setelah update, kirim notifikasi database ke patient.
     public function updateStatus(int $id, array $data): Model
     {
         $booking = $this->bookingRepository->findOrFail($id);
@@ -130,6 +130,12 @@ class BookingService
             ]);
         }
 
-        return $this->bookingRepository->update($id, $data);
+        $updated = $this->bookingRepository->update($id, $data);
+
+        // Load relasi untuk notifikasi setelah update
+        $updated->load(['doctor.user', 'service', 'patient.user']);
+        $updated->patient->user->notify(new BookingStatusUpdatedNotification($updated));
+
+        return $updated;
     }
 }

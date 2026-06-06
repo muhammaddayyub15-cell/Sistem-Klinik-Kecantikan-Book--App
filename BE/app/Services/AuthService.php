@@ -2,33 +2,35 @@
 
 namespace App\Services;
 
+use App\Models\User;
 use App\Repositories\UserRepository;
 use App\Repositories\PatientRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
-// AuthService: business logic authentication
+// AuthService: Business logic authentication.
+// Tidak extend BaseService — logic register melibatkan dua repository sekaligus (User + Patient).
 class AuthService
 {
     public function __construct(
-        protected UserRepository $userRepository,
+        protected UserRepository    $userRepository,
         protected PatientRepository $patientRepository
     ) {}
 
-    // fungsi: register user + patient + token
+    // register: Buat user + patient profile + token dalam satu transaction.
+    // Alur: validasi email → create user → create patient → generate token
     public function register(array $data): array
     {
         return DB::transaction(function () use ($data) {
 
-            // VALIDASI EMAIL DUPLICATE
             if ($this->userRepository->findByEmail($data['email'])) {
                 throw ValidationException::withMessages([
-                    'email' => 'Email already registered'
+                    'email' => 'Email already registered.',
                 ]);
             }
 
-            // CREATE USER
             $user = $this->userRepository->create([
                 'full_name' => $data['full_name'],
                 'email'     => $data['email'],
@@ -37,16 +39,14 @@ class AuthService
                 'status'    => 'active',
             ]);
 
-            // CREATE PATIENT
             $this->patientRepository->create([
                 'user_id'       => $user->user_id,
                 'date_of_birth' => $data['date_of_birth'] ?? null,
-                'gender'        => $data['gender'] ?? null,
-                'blood_type'    => $data['blood_type'] ?? null,
-                'address'       => $data['address'] ?? null,
+                'gender'        => $data['gender']        ?? null,
+                'blood_type'    => $data['blood_type']    ?? null,
+                'address'       => $data['address']       ?? null,
             ]);
 
-            // CREATE TOKEN
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return [
@@ -56,20 +56,20 @@ class AuthService
         });
     }
 
-    // fungsi: login user
+    // login: Validasi kredensial + update last login + generate token.
     public function login(array $credentials): array
     {
         $user = $this->userRepository->findByEmail($credentials['email']);
 
         if (!$user || !Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['Invalid credentials'],
+                'email' => ['Invalid credentials.'],
             ]);
         }
 
         if ($user->status !== 'active') {
             throw ValidationException::withMessages([
-                'email' => ['Account is inactive'],
+                'email' => ['Account is inactive.'],
             ]);
         }
 
@@ -83,24 +83,28 @@ class AuthService
         ];
     }
 
-    // fungsi: logout user
-    public function logout($user): void
+    // logout: Hapus token aktif saat ini — token lain milik user tetap valid.
+    public function logout(User $user): void
     {
-        if ($user && $user->currentAccessToken()) {
-            $user->currentAccessToken()->delete();
+        /** @var PersonalAccessToken $token */
+        $token = $user->currentAccessToken();
+        if ($token) {
+            $token->delete();
         }
     }
 
-    // fungsi: refresh token
-    public function refresh($user): array
+    // refresh: Rotating token — hapus token lama, buat token baru.
+    public function refresh(User $user): array
     {
-        $user->currentAccessToken()->delete();
+        /** @var PersonalAccessToken $token */
+        $token = $user->currentAccessToken();
+        $token->delete();
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $newToken = $user->createToken('auth_token')->plainTextToken;
 
         return [
             'user'  => $user,
-            'token' => $token,
+            'token' => $newToken,
         ];
     }
 }

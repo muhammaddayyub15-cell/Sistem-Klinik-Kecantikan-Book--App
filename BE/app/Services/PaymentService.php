@@ -80,7 +80,7 @@ class PaymentService extends BaseService
                 'midtrans_id'    => null,     // diisi saat webhook masuk
                 'amount'         => $order->total_amount,
                 'payment_method' => null,     // FIX: singular, diisi saat webhook masuk
-                'payment_channel'=> null,     // diisi saat webhook masuk
+                'payment_channel' => null,     // diisi saat webhook masuk
                 'status'         => 'pending',
                 'paid_at'        => null,
             ]);
@@ -124,7 +124,7 @@ class PaymentService extends BaseService
             $payment->update([
                 'midtrans_id'    => $payload['transaction_id'] ?? null,
                 'payment_method' => $payload['payment_type']   ?? null,  // FIX: singular
-                'payment_channel'=> $payload['bank'] ?? $payload['acquirer'] ?? null,
+                'payment_channel' => $payload['bank'] ?? $payload['acquirer'] ?? null,
             ]);
 
             $status = $payload['transaction_status'];
@@ -135,13 +135,13 @@ class PaymentService extends BaseService
                 $status === 'capture' && $fraud === 'accept',
                 // settlement = transfer bank / e-wallet berhasil
                 $status === 'settlement'
-                    => $this->handleSettlement($payment),
+                => $this->handleSettlement($payment),
 
                 $status === 'expire'
-                    => $this->handleExpiry($payment),
+                => $this->handleExpiry($payment),
 
                 $status === 'cancel' || $status === 'deny'
-                    => $this->handleCancellation($payment),
+                => $this->handleCancellation($payment),
 
                 // pending, authorize — tidak ada aksi, tunggu webhook berikutnya
                 default => null,
@@ -172,7 +172,7 @@ class PaymentService extends BaseService
             'customer_details' => [
                 'first_name' => $order->patient_name_snapshot,
             ],
-            'item_details' => $order->orderItems->map(fn ($item) => [
+            'item_details' => $order->orderItems->map(fn($item) => [
                 'id'       => (string) $item->product_id_snapshot,
                 'price'    => (int) $item->unit_price_snapshot,
                 'quantity' => (int) $item->qty,
@@ -185,11 +185,12 @@ class PaymentService extends BaseService
     // Formula: SHA512(order_id + status_code + gross_amount + server_key)
     private function verifySignature(array $payload): void
     {
-        $expected = hash('sha512',
+        $expected = hash(
+            'sha512',
             ($payload['order_id']     ?? '') .
-            ($payload['status_code']  ?? '') .
-            ($payload['gross_amount'] ?? '') .
-            config('midtrans.server_key')
+                ($payload['status_code']  ?? '') .
+                ($payload['gross_amount'] ?? '') .
+                config('midtrans.server_key')
         );
 
         if (($payload['signature_key'] ?? '') !== $expected) {
@@ -198,18 +199,27 @@ class PaymentService extends BaseService
     }
 
     // handleSettlement: Pembayaran berhasil — update payment success + order paid.
+    // handleSettlement: Pembayaran berhasil — update payment success + order paid + notify patient.
     private function handleSettlement(Model $payment): void
     {
         $this->paymentRepository->updateStatus(
             $payment->payment_id,
-            'success',                              // FIX: bukan 'paid'
+            'success',
             ['paid_at' => now()]
         );
 
-        // FIX: status order 'paid' bukan 'completed' — sesuai enum di migration
-        $this->orderRepository->updateStatus($payment->order_id, 'paid', [
+        $order = $this->orderRepository->updateStatus($payment->order_id, 'paid', [
             'paid_at' => now(),
         ]);
+
+        // Load patient user untuk notifikasi — ambil via patient_id_snapshot
+        $patient = \App\Models\Patient::with('user')
+            ->where('patient_id', $order->patient_id_snapshot)
+            ->first();
+
+        if ($patient?->user) {
+            $patient->user->notify(new \App\Notifications\PaymentSuccessNotification($order));
+        }
     }
 
     // handleExpiry: Batas waktu pembayaran habis.

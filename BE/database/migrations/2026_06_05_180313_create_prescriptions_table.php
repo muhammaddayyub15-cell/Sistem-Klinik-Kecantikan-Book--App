@@ -12,8 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('prescriptions', function (Blueprint $table) {
-            $table->id();
+            $table->id('prescription_id');
+            $table->unsignedBigInteger('record_id');
+            $table->unsignedBigInteger('product_id')->nullable();
+            $table->unsignedInteger('qty')->default(1);
+            $table->text('description')->nullable();
             $table->timestamps();
+
+            $table->foreign('record_id')
+                ->references('record_id')
+                ->on('medical_records')
+                ->cascadeOnDelete();
         });
     }
 

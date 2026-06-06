@@ -3,9 +3,9 @@
 namespace App\Repositories;
 
 use App\Models\User;
-use App\Repositories\BaseRepository;
 
-// UserRepository: handling query khusus untuk user
+// UserRepository: Query khusus untuk tabel users.
+// Dipakai AuthService untuk login, register, dan profile.
 class UserRepository extends BaseRepository
 {
     public function __construct(User $model)
@@ -13,7 +13,7 @@ class UserRepository extends BaseRepository
         parent::__construct($model);
     }
 
-    // findByEmail: dipakai AuthService saat login & cek duplikat email saat register
+    // findByEmail: Cari user berdasarkan email — dipakai saat login & cek duplikat register.
     public function findByEmail(string $email): ?User
     {
         return $this->model
@@ -21,24 +21,29 @@ class UserRepository extends BaseRepository
             ->first();
     }
 
-    // updateLastLogin: update timestamp login terakhir — dipanggil AuthService setelah login berhasil
+    // updateLastLogin: Update timestamp login terakhir — dipanggil AuthService setelah login berhasil.
+    // Cast ke User eksplisit karena findOrFail() dari BaseRepository return Model.
     public function updateLastLogin(int $userId): User
     {
+        /** @var User $user */
         $user = $this->findOrFail($userId);
 
-        $user->update([
-            'last_login_at' => now(),
-        ]);
+        $user->update(['last_login_at' => now()]);
 
-        // refresh() dipakai agar konsisten dengan custom PK user_id (fresh() bisa query pakai 'id')
+        // refresh() agar konsisten dengan custom PK user_id
         return $user->refresh();
     }
 
-    // findWithRelations: load user beserta relasi patient & doctor — dipakai getMe / profile endpoint
+    // findWithRelations: Load user beserta relasi patient & doctor.
+    // Dipakai getMe() dan profile endpoint.
+    // Cast ke User eksplisit karena findOrFail() dari BaseRepository return Model.
     public function findWithRelations(int $id): User
     {
-        return $this->model
+        /** @var User $user */
+        $user = $this->model
             ->with(['patient', 'doctor'])
             ->findOrFail($id);
+
+        return $user;
     }
 }
